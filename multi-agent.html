@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LOOP — 다중 에이전트로의 확장</title>
+<meta name="description" content="LOOP를 여러 에이전트로 확장하기: 분해 기준, 토폴로지 카탈로그, 의존성 계약, 실패 전파. 채점 게이트는 늘 작업자 바깥에 둔다.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#E9EBEE;
+    --paper-2:#F2F3F5;
+    --card:#FCFCFD;
+    --ink:#15191F;
+    --ink-soft:#535B68;
+    --ink-faint:#8A929E;
+    --rule:#C9CDD4;
+    --rule-soft:#DDE0E5;
+    --pass:#0F7A6B;
+    --pass-bg:#E1F0ED;
+    --reject:#C24A30;
+    --reject-bg:#F6E6E1;
+    --na:#7A828E;
+    --na-bg:#E7E9EC;
+    --warn:#B8761A;
+    --warn-bg:#F6ECDA;
+    --maxw:1040px;
+    --mono:'IBM Plex Mono',ui-monospace,monospace;
+    --sans:'IBM Plex Sans KR','IBM Plex Sans',system-ui,sans-serif;
+    --display:'Black Han Sans',var(--sans);
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+  body{
+    margin:0;background:var(--paper);color:var(--ink);
+    font-family:var(--sans);font-weight:400;line-height:1.7;
+    -webkit-font-smoothing:antialiased;font-size:16px;
+  }
+  a{color:inherit}
+
+  /* ---------- top nav ---------- */
+  .nav{
+    position:sticky;top:0;z-index:50;
+    background:rgba(233,235,238,.86);backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--rule);
+  }
+  .nav-inner{
+    max-width:var(--maxw);margin:0 auto;padding:14px 24px;
+    display:flex;align-items:center;justify-content:space-between;gap:16px;
+  }
+  .brand{display:flex;align-items:center;gap:10px;font-family:var(--mono);
+    font-weight:600;letter-spacing:.18em;font-size:15px}
+  .brand .dot{width:9px;height:9px;border-radius:50%;background:var(--pass);
+    box-shadow:0 0 0 4px var(--pass-bg)}
+  .nav-links{display:flex;gap:4px;flex-wrap:wrap}
+  .nav-links a{
+    font-family:var(--mono);font-size:12px;letter-spacing:.04em;
+    color:var(--ink-soft);text-decoration:none;padding:6px 10px;border-radius:6px;
+    transition:background .15s,color .15s;
+  }
+  .nav-links a:hover{color:var(--ink);background:var(--paper-2)}
+  .nav-links a.active{color:var(--pass);background:var(--pass-bg)}
+  @media(max-width:720px){.nav-links{display:none}}
+
+  /* ---------- layout ---------- */
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 24px}
+  section{padding:84px 0;border-top:1px solid var(--rule-soft)}
+  section:first-of-type{border-top:none}
+  .eyebrow{
+    font-family:var(--mono);font-size:12px;letter-spacing:.22em;
+    text-transform:uppercase;color:var(--ink-faint);
+    display:flex;align-items:center;gap:10px;margin:0 0 18px;
+  }
+  .eyebrow .num{color:var(--pass);font-weight:600}
+  h2{font-family:var(--sans);font-weight:700;font-size:clamp(26px,4vw,38px);
+    line-height:1.2;margin:0 0 22px;letter-spacing:-.01em}
+  .lede{font-size:clamp(17px,2.2vw,19px);color:var(--ink-soft);max-width:62ch;margin:0 0 8px}
+  p{max-width:64ch}
+  strong{font-weight:600;color:var(--ink)}
+  .accent{color:var(--pass);font-weight:600}
+
+  /* ---------- hero ---------- */
+  .hero{padding:76px 0 70px;border-top:none}
+  .hero .eyebrow{margin-bottom:24px}
+  .thesis{
+    font-family:var(--display);font-weight:400;
+    font-size:clamp(40px,8.5vw,84px);line-height:1.02;letter-spacing:-.01em;
+    margin:0 0 28px;color:var(--ink);
+  }
+  .thesis .b{color:var(--pass)}
+  .hero-sub{font-size:clamp(17px,2.4vw,21px);color:var(--ink-soft);max-width:54ch;margin:0 0 40px}
+  .hero-sub b{color:var(--ink);font-weight:600}
+
+  /* ---------- loop-gate figure ---------- */
+  .figure{
+    background:var(--card);border:1px solid var(--rule);border-radius:14px;
+    padding:28px;margin:8px 0 0;
+  }
+  .figure svg{width:100%;height:auto;display:block}
+  .fig-cap{font-family:var(--mono);font-size:12px;color:var(--ink-faint);
+    letter-spacing:.04em;margin-top:14px;text-align:center}
+  .track{fill:none;stroke:var(--rule);stroke-width:2}
+  .track-flow{fill:none;stroke:var(--pass);stroke-width:2.5;
+    stroke-dasharray:10 320;stroke-linecap:round;
+    animation:flow 5.5s linear infinite;}
+  @keyframes flow{to{stroke-dashoffset:-330}}
+  @media (prefers-reduced-motion:reduce){.track-flow{animation:none;stroke-dasharray:none;opacity:.35}}
+  .node-box{fill:var(--paper-2);stroke:var(--ink);stroke-width:1.5}
+  .gate-box{fill:#fff;stroke:var(--pass);stroke-width:2}
+  .lbl{font-family:var(--mono);font-size:13px;font-weight:600;fill:var(--ink)}
+  .lbl-sm{font-family:var(--mono);font-size:11px;fill:var(--ink-soft)}
+  .lbl-pass{fill:var(--pass)}
+  .lbl-reject{fill:var(--reject)}
+  .arrow{fill:var(--ink)}
+
+  /* ---------- mode pills ---------- */
+  .modes{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:30px 0 8px}
+  .pill{
+    font-family:var(--mono);font-size:14px;font-weight:500;
+    border:1px solid var(--rule);border-radius:999px;padding:10px 18px;background:var(--card);
+  }
+  .pill.maker{border-color:var(--ink);}
+  .pill.grader{border-color:var(--pass);color:var(--pass);background:var(--pass-bg)}
+  .modes .sw{font-family:var(--mono);font-size:12px;color:var(--ink-faint);
+    display:flex;flex-direction:column;align-items:center;gap:2px}
+  .modes .sw .ar{font-size:18px;color:var(--ink-soft)}
+
+  .callout{
+    border-left:3px solid var(--reject);background:var(--card);
+    padding:16px 20px;margin:26px 0 0;border-radius:0 8px 8px 0;
+    font-size:15px;color:var(--ink-soft);max-width:64ch;
+  }
+  .callout b{color:var(--ink)}
+
+  /* ---------- checklist sheet ---------- */
+  .sheet{
+    background:var(--card);border:1px solid var(--rule);border-radius:12px;
+    overflow:hidden;margin-top:8px;
+  }
+  .sheet-head{
+    display:flex;justify-content:space-between;align-items:center;
+    padding:14px 22px;border-bottom:1px solid var(--rule);
+    font-family:var(--mono);font-size:12px;letter-spacing:.06em;color:var(--ink-faint);
+    background:var(--paper-2);
+  }
+  .row{display:flex;align-items:flex-start;gap:18px;padding:18px 22px;border-bottom:1px solid var(--rule-soft)}
+  .row:last-child{border-bottom:none}
+  .row .idx{font-family:var(--mono);font-size:13px;color:var(--pass);font-weight:600;width:22px;flex:none;padding-top:2px}
+  .row .item{flex:1}
+  .row .item .t{font-weight:600;font-size:15.5px}
+  .row .item .h{font-size:13.5px;color:var(--ink-soft);margin-top:3px}
+  .verdicts{display:flex;gap:6px;flex:none;padding-top:1px}
+  .v{font-family:var(--mono);font-size:11px;letter-spacing:.02em;padding:4px 9px;border-radius:5px;font-weight:500}
+  .v.pass{color:var(--pass);background:var(--pass-bg)}
+  .v.fail{color:var(--reject);background:var(--reject-bg)}
+  .v.na{color:var(--na);background:var(--na-bg)}
+  .v.ghost{opacity:.28}
+  @media(max-width:600px){
+    .row{flex-wrap:wrap}
+    .verdicts{width:100%;padding-top:6px;padding-left:40px}
+  }
+  .sheet-note{font-family:var(--mono);font-size:12px;color:var(--ink-faint);
+    padding:13px 22px;background:var(--paper-2);border-top:1px solid var(--rule)}
+
+  /* ---------- completion record card ---------- */
+  .record{
+    position:relative;background:var(--card);border:1px solid var(--rule);
+    border-radius:12px;padding:26px 28px 28px;margin-top:8px;overflow:hidden;
+  }
+  .record h4{font-family:var(--mono);font-size:12px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--ink-faint);margin:0 0 18px;font-weight:600}
+  .field{display:flex;gap:14px;padding:9px 0;border-bottom:1px dashed var(--rule-soft);font-size:15px}
+  .field:last-of-type{border-bottom:none}
+  .field .k{font-family:var(--mono);font-size:12.5px;color:var(--pass);width:96px;flex:none;padding-top:3px;letter-spacing:.03em}
+  .field .vv{color:var(--ink-soft)}
+  .field .vv b{color:var(--ink);font-weight:600}
+  .stamp{
+    position:absolute;top:20px;right:18px;
+    font-family:var(--mono);font-weight:600;font-size:15px;letter-spacing:.18em;
+    color:var(--pass);border:2.5px solid var(--pass);border-radius:8px;
+    padding:8px 14px;transform:rotate(-11deg);opacity:.9;
+  }
+  @media(max-width:520px){.stamp{position:static;transform:none;display:inline-block;margin-bottom:16px}}
+
+  /* ---------- safety cards ---------- */
+  .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:8px}
+  @media(max-width:760px){.cards{grid-template-columns:1fr}}
+  .scard{background:var(--card);border:1px solid var(--rule);border-radius:12px;padding:22px 22px 24px}
+  .scard .tag{font-family:var(--mono);font-size:11px;letter-spacing:.06em;padding:4px 9px;border-radius:5px;display:inline-block;margin-bottom:14px;font-weight:600}
+  .scard.stop .tag{color:var(--reject);background:var(--reject-bg)}
+  .scard.loopstop .tag{color:var(--warn);background:var(--warn-bg)}
+  .scard.prop .tag{color:var(--pass);background:var(--pass-bg)}
+  .scard h4{margin:0 0 10px;font-size:17px;font-weight:700}
+  .scard p{font-size:14.5px;color:var(--ink-soft);margin:0;max-width:none}
+
+  /* ---------- multi-agent figure ---------- */
+  .ma-fig{background:var(--card);border:1px solid var(--rule);border-radius:14px;padding:26px;margin-top:8px}
+  .honest{font-family:var(--mono);font-size:12.5px;color:var(--ink-faint);
+    margin-top:22px;padding:14px 18px;border:1px dashed var(--rule);border-radius:8px;max-width:none}
+
+  /* ---------- footer ---------- */
+  footer{border-top:1px solid var(--rule);padding:50px 0 64px;color:var(--ink-soft)}
+  footer .wrap{display:flex;flex-direction:column;gap:10px}
+  footer .fbrand{font-family:var(--mono);font-weight:600;letter-spacing:.18em;color:var(--ink)}
+  footer p{font-size:13.5px;max-width:70ch;margin:0}
+  footer .meta{font-family:var(--mono);font-size:12px;color:var(--ink-faint);margin-top:8px}
+</style>
+<style>
+  /* ---------- multi-agent page additions ---------- */
+  .sub-hero{padding:60px 0 54px;border-top:none}
+  .sub-hero .thesis{font-size:clamp(32px,6.2vw,58px)}
+  .topo-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-top:8px}
+  @media(max-width:760px){.topo-grid{grid-template-columns:1fr}}
+  .topo{background:var(--card);border:1px solid var(--rule);border-radius:12px;padding:20px 22px 22px;display:flex;flex-direction:column;gap:11px}
+  .topo .name{font-family:var(--mono);font-weight:600;font-size:13.5px;letter-spacing:.04em;color:var(--ink)}
+  .topo .mini{background:var(--paper-2);border:1px solid var(--rule-soft);border-radius:8px;padding:8px}
+  .topo .mini svg{width:100%;height:78px;display:block}
+  .topo .use{font-size:14px;color:var(--ink);margin:0}
+  .topo .weak{font-size:12.5px;color:var(--ink-soft);margin:0}
+  .topo .weak b{color:var(--reject);font-weight:600}
+  .lbl-sm.dim{opacity:.45}
+  .back{font-family:var(--mono);font-size:12.5px;color:var(--ink-faint);text-decoration:none;display:inline-block;margin-top:6px}
+  .back:hover{color:var(--pass)}
+  .field .k.wide{width:108px}
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a href="index.html" class="brand" style="text-decoration:none"><span class="dot"></span>LOOP</a>
+    <div class="nav-links">
+      <a href="index.html">허브</a>
+      <a href="#when">언제 나누나</a>
+      <a href="#topology">토폴로지</a>
+      <a href="#contract">계약</a>
+      <a href="#orchestrate">오케스트레이션</a>
+      <a href="#failure">실패 전파</a>
+      <a href="templates.html">템플릿</a>
+    </div>
+  </div>
+</nav>
+
+<!-- HERO -->
+<header class="hero sub-hero wrap">
+  <div class="eyebrow"><span class="num">//</span> LOOP 확장 · 다중 에이전트</div>
+  <h1 class="thesis">한 명이 잘하는 것과<br>여럿이 맞물리는 것은 <span class="b">다른 설계</span>다.</h1>
+  <p class="hero-sub">작업자↔채점자 분리는 한 에이전트 안에서 끝나지 않는다. 여럿이 일할 땐 <b>누가 무엇을 만들고, 어떤 순서로 맞물리고, 하나가 무너지면 팀이 어떻게 되는지</b>를 설계해야 한다. 머릿수가 늘어도 핵심은 그대로다 — 채점 게이트는 늘 작업자 바깥에 둔다.</p>
+
+  <div class="ma-fig">
+    <svg viewBox="0 0 660 290" role="img" aria-label="오케스트레이터가 세 작업자에게 나누고, 작업자들의 병렬 결과가 종합 단계로 합류한 뒤, 분리된 채점자가 통과 또는 반려를 결정하는 구조">
+      <!-- orchestrator -->
+      <rect class="node-box" x="266" y="14" width="128" height="42" rx="9"/>
+      <text class="lbl" x="330" y="40" text-anchor="middle">오케스트레이터</text>
+      <!-- fan-out -->
+      <path class="track" d="M330,56 V78 M150,78 H510 M150,78 V100 M330,78 V100 M510,78 V100"/>
+      <!-- workers -->
+      <rect class="node-box" x="96" y="100" width="108" height="42" rx="9"/>
+      <text class="lbl" x="150" y="126" text-anchor="middle">작업자 A</text>
+      <rect class="node-box" x="276" y="100" width="108" height="42" rx="9"/>
+      <text class="lbl" x="330" y="126" text-anchor="middle">작업자 B</text>
+      <rect class="node-box" x="456" y="100" width="108" height="42" rx="9"/>
+      <text class="lbl" x="510" y="126" text-anchor="middle">작업자 C</text>
+      <!-- fan-in -->
+      <path class="track" d="M150,142 V164 M330,142 V164 M510,142 V164 M150,164 H510 M330,164 V184"/>
+      <!-- synthesizer (merge) -->
+      <rect class="node-box" x="246" y="184" width="168" height="42" rx="9"/>
+      <text class="lbl" x="330" y="210" text-anchor="middle">종합 · 합류</text>
+      <!-- down to grader -->
+      <path class="track" d="M330,226 V244"/>
+      <path class="arrow" d="M330,244 l-5,-9 h10 z"/>
+      <!-- grader (separate) -->
+      <rect class="gate-box" x="244" y="244" width="172" height="44" rx="10"/>
+      <text class="lbl lbl-pass" x="330" y="271" text-anchor="middle">채점자 · 분리</text>
+      <!-- verdicts -->
+      <text class="lbl-sm lbl-pass" x="470" y="270" style="fill:var(--pass)">통과 ↗</text>
+      <text class="lbl-sm lbl-reject" x="150" y="270" style="fill:var(--reject)">↺ 반려</text>
+    </svg>
+    <div class="fig-cap">오케스트레이터가 나누고 → 작업자들이 병렬로 만들고 → 합류해 종합하고 → 분리된 채점자가 통과를 결정한다</div>
+  </div>
+</header>
+
+<!-- WHEN -->
+<section id="when" class="wrap">
+  <div class="eyebrow"><span class="num">01</span> 분해</div>
+  <h2>언제 나누는가</h2>
+  <p class="lede">기본값은 <span class="accent">한 명</span>이다. 팀은 컨텍스트·조율·실패 면적을 모두 늘린다 — 나눔은 정당화가 필요한 결정이다.</p>
+
+  <div class="sheet">
+    <div class="sheet-head"><span>분해 신호</span><span>네 개 중 둘 이상</span></div>
+    <div class="row"><div class="idx">·</div><div class="item"><div class="t">컨텍스트 격리 필요</div><div class="h">한 역할의 맥락·참조가 다른 역할을 오염시킨다</div></div></div>
+    <div class="row"><div class="idx">·</div><div class="item"><div class="t">독립된 도메인 지식</div><div class="h">역할마다 다른 기준·용어·출처를 쓴다</div></div></div>
+    <div class="row"><div class="idx">·</div><div class="item"><div class="t">독립된 성공 기준</div><div class="h">역할별로 "잘했다"의 판정이 따로 선다</div></div></div>
+    <div class="row"><div class="idx">·</div><div class="item"><div class="t">병렬 이득</div><div class="h">서로를 기다릴 필요가 없어 동시 실행이 시간을 줄인다</div></div></div>
+    <div class="sheet-note">// 둘 이상이면 팀을 적극 검토. 단 강한 단일 신호 하나로도 근거를 대면 정당화된다 — 임계는 가이드지 법이 아니다.</div>
+  </div>
+</section>
+
+<!-- TOPOLOGY -->
+<section id="topology" class="wrap">
+  <div class="eyebrow"><span class="num">02</span> 위상</div>
+  <h2>토폴로지 — 팀의 모양</h2>
+  <p class="lede">팀이 정해지면 모양을 고른다.</p>
+  <div class="callout" style="border-left-color:var(--pass)"><b>먼저 물을 것 — 합성이 필요한가?</b> 독립 작업을 병렬로 돌린 뒤 합쳐야 하거나, 둘 이상 위상이 겹치면 합성으로 설계한다. 단일 패턴으로 욱여넣지 않는다. 합성은 예외가 아니라 흔한 경우다.</div>
+
+  <div class="topo-grid" style="margin-top:22px">
+    <div class="topo">
+      <div class="name">PIPELINE · 순차</div>
+      <div class="mini">
+        <svg viewBox="0 0 240 78" role="img" aria-label="A에서 B로, B에서 C로 순차로 이어지는 파이프라인">
+          <rect class="node-box" x="10" y="26" width="52" height="26" rx="6"/><text class="lbl-sm" x="36" y="43" text-anchor="middle">A</text>
+          <path class="track" d="M62,39 H86"/><path class="arrow" d="M86,39 l-9,-5 v10 z"/>
+          <rect class="node-box" x="94" y="26" width="52" height="26" rx="6"/><text class="lbl-sm" x="120" y="43" text-anchor="middle">B</text>
+          <path class="track" d="M146,39 H170"/><path class="arrow" d="M170,39 l-9,-5 v10 z"/>
+          <rect class="node-box" x="178" y="26" width="52" height="26" rx="6"/><text class="lbl-sm" x="204" y="43" text-anchor="middle">C</text>
+        </svg>
+      </div>
+      <p class="use">단계가 <b>엄격한 선후</b>를 가질 때 (생성 → 검토 → 정리)</p>
+      <p class="weak"><b>약점</b> · 가장 느린 단계가 전체 처리량을 잡는다</p>
+    </div>
+
+    <div class="topo">
+      <div class="name">FAN-OUT / FAN-IN · 병렬→합류</div>
+      <div class="mini">
+        <svg viewBox="0 0 240 78" role="img" aria-label="분배가 셋으로 나뉘어 병렬 처리된 뒤 하나로 합류">
+          <rect class="node-box" x="6" y="29" width="40" height="22" rx="6"/><text class="lbl-sm" x="26" y="44" text-anchor="middle">분배</text>
+          <path class="track" d="M46,40 H70 M70,15 V65 M70,15 H96 M70,40 H96 M70,65 H96"/>
+          <rect class="node-box" x="96" y="5" width="44" height="20" rx="5"/><text class="lbl-sm" x="118" y="19" text-anchor="middle">A</text>
+          <rect class="node-box" x="96" y="30" width="44" height="20" rx="5"/><text class="lbl-sm" x="118" y="44" text-anchor="middle">B</text>
+          <rect class="node-box" x="96" y="55" width="44" height="20" rx="5"/><text class="lbl-sm" x="118" y="69" text-anchor="middle">C</text>
+          <path class="track" d="M140,15 H166 M140,40 H166 M140,65 H166 M166,15 V65 M166,40 H186"/>
+          <path class="arrow" d="M186,40 l-9,-5 v10 z"/>
+          <rect class="gate-box" x="190" y="29" width="44" height="22" rx="6"/><text class="lbl-sm lbl-pass" x="212" y="44" text-anchor="middle">합류</text>
+        </svg>
+      </div>
+      <p class="use">독립 작업을 <b>동시에</b> 처리한 뒤 <b>종합</b>할 때</p>
+      <p class="weak"><b>약점</b> · 합류 역할이 단일 병목·단일 실패점</p>
+    </div>
+
+    <div class="topo">
+      <div class="name">EXPERT POOL · 라우터 택1</div>
+      <div class="mini">
+        <svg viewBox="0 0 240 78" role="img" aria-label="라우터가 세 전문가 중 하나를 골라 보낸다">
+          <rect class="node-box" x="6" y="29" width="48" height="22" rx="6"/><text class="lbl-sm" x="30" y="44" text-anchor="middle">라우터</text>
+          <path class="track" d="M54,40 H78 M78,14 V66 M78,14 H104 M78,40 H104 M78,66 H104"/>
+          <rect class="node-box" x="104" y="4" width="64" height="20" rx="5"/><text class="lbl-sm dim" x="136" y="18" text-anchor="middle">전문가 1</text>
+          <rect class="gate-box" x="104" y="29" width="64" height="20" rx="5"/><text class="lbl-sm lbl-pass" x="136" y="43" text-anchor="middle">전문가 2</text>
+          <rect class="node-box" x="104" y="55" width="64" height="20" rx="5" opacity="0.4"/><text class="lbl-sm dim" x="136" y="69" text-anchor="middle">전문가 3</text>
+          <text class="lbl-sm lbl-pass" x="200" y="44" text-anchor="middle" style="fill:var(--pass)">택 1</text>
+        </svg>
+      </div>
+      <p class="use">입력이 <b>갈래로 나뉘어</b> 갈래마다 다른 전문가가 받을 때</p>
+      <p class="weak"><b>약점</b> · 라우팅 오분류 시 엉뚱한 전문가</p>
+    </div>
+
+    <div class="topo">
+      <div class="name">HIERARCHICAL · 계층 위임</div>
+      <div class="mini">
+        <svg viewBox="0 0 240 78" role="img" aria-label="관리자가 두 하위 관리자에게, 다시 작업자들에게 위임">
+          <rect class="node-box" x="92" y="4" width="56" height="20" rx="5"/><text class="lbl-sm" x="120" y="18" text-anchor="middle">관리자</text>
+          <path class="track" d="M120,24 V34 M60,34 H180 M60,34 V40 M180,34 V40"/>
+          <rect class="node-box" x="34" y="40" width="52" height="18" rx="5"/><text class="lbl-sm" x="60" y="53" text-anchor="middle">하위 A</text>
+          <rect class="node-box" x="154" y="40" width="52" height="18" rx="5"/><text class="lbl-sm" x="180" y="53" text-anchor="middle">하위 B</text>
+          <path class="track" d="M60,58 V64 M40,64 H80 M40,64 V70 M80,64 V70 M180,58 V64 M160,64 H200 M160,64 V70 M200,64 V70"/>
+          <circle class="arrow" cx="40" cy="72" r="2.6"/><circle class="arrow" cx="80" cy="72" r="2.6"/><circle class="arrow" cx="160" cy="72" r="2.6"/><circle class="arrow" cx="200" cy="72" r="2.6"/>
+        </svg>
+      </div>
+      <p class="use">작업 트리가 커서 <b>한 층의 분해로 부족</b>할 때</p>
+      <p class="weak"><b>약점</b> · 무겁다 — <b>정말 필요할 때만</b>. 층마다 조율·실패 면적이 는다</p>
+    </div>
+  </div>
+</section>
+
+<!-- CONTRACT -->
+<section id="contract" class="wrap">
+  <div class="eyebrow"><span class="num">03</span> 계약</div>
+  <h2>의존성과 I/O 계약</h2>
+  <p class="lede">모양에 <span class="accent">방향과 의무</span>를 새긴다. 누가 누구를 기다리고, 누가 무엇을 반드시 받아야 하는가.</p>
+
+  <div class="cards">
+    <div class="scard prop">
+      <span class="tag">구조적 입력 의무</span>
+      <h4>다 받기 전엔 시작 안 한다</h4>
+      <p>합류 역할은 받아야 할 산출을 전부 받기 전에 작업을 시작하지 않는다. 빠진 자리를 추측으로 메우지 않는다.</p>
+    </div>
+    <div class="scard loopstop">
+      <span class="tag">비순환 · DAG</span>
+      <h4>서로 기다리지 않는다</h4>
+      <p>두 역할이 서로의 산출을 대기하는 순환은 금지. 반복 정련이 필요하면 순환이 아니라 순차 마디로 펼친다.</p>
+    </div>
+    <div class="scard prop">
+      <span class="tag">공통 스키마</span>
+      <h4>합류는 같은 형식으로</h4>
+      <p>한 곳으로 모이는 산출은 같은 스키마를 따른다. 제각각이면 검증도 합류도 무너진다.</p>
+    </div>
+  </div>
+
+  <div class="record" style="margin-top:16px">
+    <h4>역할 계약 · 템플릿</h4>
+    <div class="field"><span class="k wide">책임</span><span class="vv">한 문장 — 한 문장으로 안 끝나면 <b>과대 역할</b></span></div>
+    <div class="field"><span class="k wide">입력</span><span class="vv">어디서 · 어떤 형식</span></div>
+    <div class="field"><span class="k wide">출력</span><span class="vv">형식 — 합류 대상이면 <b>공통 스키마</b></span></div>
+    <div class="field"><span class="k wide">병렬</span><span class="vv">가능 / 아니면 선행 의존</span></div>
+    <div class="field"><span class="k wide">필수·선택</span><span class="vv">선택이면 실패 시 <b>graceful degradation</b></span></div>
+    <div class="field"><span class="k wide">합류 의무</span><span class="vv">시작 전 반드시 받아야 할 산출 목록</span></div>
+  </div>
+</section>
+
+<!-- ORCHESTRATE -->
+<section id="orchestrate" class="wrap">
+  <div class="eyebrow"><span class="num">04</span> 조율</div>
+  <h2>오케스트레이션</h2>
+  <p>다른 역할의 <strong>산출물을 읽는</strong> 것은 협력이다 — 허용된다. 하지만 다른 역할을 <strong>직접 부르는</strong> 것은 금지한다. 호출은 언제나 오케스트레이터를 거친다. <span class="accent">출력 참조는 데이터 흐름이고, 직접 호출은 제어 흐름이다</span> — 전자는 열려 있고, 후자는 닫혀 있다.</p>
+
+  <div class="modes" role="img" aria-label="출력 참조는 허용, 직접 호출은 금지">
+    <span class="pill grader">출력 참조 · 허용</span>
+    <span class="sw"><span class="ar">≠</span>다른 층</span>
+    <span class="pill" style="border-color:var(--reject);color:var(--reject)">직접 호출 · 금지</span>
+  </div>
+
+  <div class="callout" style="border-left-color:var(--pass)"><b>채점 게이트는 작업자 바깥.</b> 머릿수가 늘어도 변하지 않는 단 하나 — 만드는 손과 판정하는 눈을 같은 자리에 두지 않는다. 팀의 완료는 팀 안에서 선언되지 않는다.</div>
+</section>
+
+<!-- FAILURE -->
+<section id="failure" class="wrap">
+  <div class="eyebrow"><span class="num">05</span> 실패</div>
+  <h2>실패는 어떻게 번지는가</h2>
+  <p class="lede">한 역할이 무너지면 팀은 어떻게 되나 — 쓰러진 뒤가 아니라 <span class="accent">설계할 때</span> 정한다.</p>
+
+  <div class="sheet">
+    <div class="sheet-head"><span>상황</span><span>팀 동작</span></div>
+    <div class="row"><div class="idx">!</div><div class="item"><div class="t">필수 역할 실패</div><div class="h">팀 중단 · 에스컬레이션. 부분 산출을 "완료"로 위장하지 않는다</div></div></div>
+    <div class="row"><div class="idx">~</div><div class="item"><div class="t">선택 역할 실패</div><div class="h">누락을 명시한 채 진행 (graceful degradation). 무엇이 왜 빠졌는지 산출에 남긴다</div></div></div>
+    <div class="row"><div class="idx">∑</div><div class="item"><div class="t">합류 입력 결손</div><div class="h">은폐 없이 부분 종합. 신뢰도를 낮추고 빠진 것을 단서로 명시한다 — 추측으로 메우지 않는다</div></div></div>
+    <div class="sheet-note">// 단계 하나의 재시도·스킵은 일반 실패 처리. 여기서 다루는 건 그 실패가 팀 전체로 번지는 방식이다.</div>
+  </div>
+</section>
+
+<!-- ANTI-PATTERNS -->
+<section id="anti" class="wrap">
+  <div class="eyebrow"><span class="num">06</span> 함정</div>
+  <h2>피해야 할 것</h2>
+  <div class="cards">
+    <div class="scard stop"><span class="tag">분해를 위한 분해</span><h4>나누면 다 좋은 게 아니다</h4><p>격리 이득 없이 비용만 는다. 신호가 약하면 한 명으로 둔다.</p></div>
+    <div class="scard stop"><span class="tag">합류점 누락</span><h4>병렬만 시키고 끝</h4><p>종합이 없으면 산출은 인사이트가 아니라 데이터 더미다.</p></div>
+    <div class="scard stop"><span class="tag">순환 의존</span><h4>서로를 기다린다</h4><p>DAG를 깨면 디버깅과 실패 전파가 폭발한다. 반복은 순차 마디로.</p></div>
+    <div class="scard stop"><span class="tag">채점을 팀 안에 둠</span><h4>게이트가 형식이 된다</h4><p>작업자가 자기 팀을 통과시키면 통과는 의미를 잃는다.</p></div>
+    <div class="scard stop"><span class="tag">도메인 모양 베끼기</span><h4>위상은 재사용, 모양은 아님</h4><p>특정 작동 사례는 본보기가 아니라 진단 자료다. 위상만 빌리고 도메인 형태는 베끼지 않는다.</p></div>
+  </div>
+</section>
+
+<!-- NOTE -->
+<section id="note" class="wrap">
+  <p class="honest">// 이 페이지는 작업자·채점자 분리 원리를 <b>팀 규모로 확장한 사상</b>이다. 토폴로지 선택·계약·실패 전파의 구체 조항은 각 프로젝트의 설계 문서를 따른다 — 여기서는 사상만 적었다.</p>
+  <a class="back" href="index.html">← LOOP 허브로</a>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="fbrand">LOOP</div>
+    <p>완료는 선언이 아니라 통과의 결과다. 작업자와 채점자를 분리해, 통과로 완료를 정의하는 작업 원칙 — 그 원리를 다중 에이전트로 넓힌 페이지.</p>
+    <p>이 사이트는 LOOP 방법론을 공개 참고용으로 정리한 것이며, 특정 개인이나 조직과 무관하다.</p>
+    <div class="meta">// LOOP 방법론 · 다중 에이전트 확장</div>
+  </div>
+</footer>
+
+<script>
+  // active section highlight in nav
+  (function(){
+    var links = Array.prototype.slice.call(document.querySelectorAll('.nav-links a'));
+    var map = {};
+    links.forEach(function(a){ map[a.getAttribute('href').slice(1)] = a; });
+    var ids = Object.keys(map);
+    var sections = ids.map(function(id){ return document.getElementById(id); }).filter(Boolean);
+    if(!('IntersectionObserver' in window) || !sections.length) return;
+    var io = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){
+        if(e.isIntersecting){
+          links.forEach(function(l){ l.classList.remove('active'); });
+          if(map[e.target.id]) map[e.target.id].classList.add('active');
+        }
+      });
+    }, { rootMargin:'-45% 0px -50% 0px', threshold:0 });
+    sections.forEach(function(s){ io.observe(s); });
+  })();
+</script>
+</body>
+</html>
